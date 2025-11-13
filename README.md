@@ -28,6 +28,9 @@ Durante o desenvolvimento, aprofundei meu entendimento sobre:
   
 ---
 
-## Demonstração (opcional)
-Se tiver prints do gráfico do TradingView com o sistema rodando, adiciona aqui:
+## 👨‍💻 Autor
+**Elton Lopes**  
+Estudante autodidata de programação e entusiasta de automação e fintechs  
+LinkedIn: https://www.linkedin.com/in/elton-lopes-832a75110/  
+
 
