@@ -1,0 +1,182 @@
+//@version=5
+strategy("VisionX Trading - Criptos", overlay=true)
+
+porcentagemLucro = input.int(50, "Selecione a Porcentagem para Lucro", minval=10, maxval=100, step=10)
+direcaoNegociacao = input.string("Apenas Compra", "Direção da Negociação", options=["Apenas Compra", "Apenas Venda", "Ambos"])
+opcoesAlavancagem = input.string("5X", "Selecionar Alavancagem", options=["5X", "10X", "15X", "20X", "25X", "30X"])
+retrocesso = input.int(85, "Período de Retrocesso", minval=1)
+minVelas = input.int(45, "Número Mínimo de Velas para Visibilidade da Linha", minval=1)
+comprimentoLinha = input.int(90, "Comprimento da Linha em Velas", minval=1)
+corSuporte = input.color(color.red, "Cor da Linha de Suporte")
+corResistencia = input.color(color.green, "Cor da Linha de Resistência")
+
+sma200 = ta.sma(close, 200)
+plot(sma200, "SMA 200", color=color.yellow)
+
+fastLength = input(12, title="Comprimento Rápido MACD")
+slowLength = input(26, title="Comprimento Lento MACD")
+signalSmoothing = input(9, title="Suavização do Sinal MACD")
+[macdLine, signalLine, _] = ta.macd(close, fastLength, slowLength, signalSmoothing)
+macdHistogram = macdLine - signalLine
+
+comprimentoKC = input.int(20, "Comprimento KC", minval=1)
+multKC = input.float(2.5, "Multiplicador KC")
+comprimentoATRKC = input.int(10, "Comprimento ATR KC", minval=1)
+srcKC = close
+expKC = true
+
+esma(source, length) =>
+    s = ta.sma(source, length)
+    e = ta.ema(source, length)
+    expKC ? e : s
+
+maKC = esma(srcKC, comprimentoKC)
+
+rangeKC = ta.atr(comprimentoATRKC)
+
+upperKC = maKC + rangeKC * multKC
+lowerKC = maKC - rangeKC * multKC
+
+plot(upperKC, "KC Superior", color=color.white)
+plot(lowerKC, "KC Inferior", color=color.white)
+
+var float ultimoSuporte = na
+var float ultimaResistencia = na
+var int indiceBarraUltimoSuporte = na
+var int indiceBarraUltimaResistencia = na
+var bool sinalBreakoutDado = false
+
+var int ultimoCandleFechamento = na
+
+float menorBaixa = na
+float maiorAlta = na
+line linhaSuporte = na
+line linhaResistencia = na
+menorBaixa := ta.lowest(low, retrocesso)
+maiorAlta := ta.highest(high, retrocesso)
+
+atrasoSaida = input.int(4, "Velas de Atraso para Confirmação de Saída", minval=1)
+
+var bool breakoutCompraObservado = false
+var bool breakoutVendaObservado = false
+var int indiceBarraEntradaCompra = na
+var int indiceBarraEntradaVenda = na
+
+if bar_index > retrocesso
+    if not na(menorBaixa) and (na(ultimoSuporte) or bar_index - indiceBarraUltimoSuporte >= minVelas)
+        line.delete(linhaSuporte)
+        linhaSuporte := line.new(bar_index[retrocesso], menorBaixa, bar_index - retrocesso + comprimentoLinha, menorBaixa, width=2, color=corSuporte, extend=extend.none)
+        ultimoSuporte := menorBaixa
+        indiceBarraUltimoSuporte := bar_index
+        sinalBreakoutDado := false  // Reset do sinal
+
+    if not na(maiorAlta) and (na(ultimaResistencia) or bar_index - indiceBarraUltimaResistencia >= minVelas)
+        line.delete(linhaResistencia)
+        linhaResistencia := line.new(bar_index[retrocesso], maiorAlta, bar_index - retrocesso + comprimentoLinha, maiorAlta, width=2, color=corResistencia, extend=extend.none)
+        ultimaResistencia := maiorAlta
+        indiceBarraUltimaResistencia := bar_index
+        sinalBreakoutDado := false  // Reset do sinal
+
+if bar_index > ultimoCandleFechamento + 1
+    if strategy.position_size == 0 
+        if not sinalBreakoutDado
+            if (direcaoNegociacao == "Apenas Compra" or direcaoNegociacao == "Ambos") 
+                if close > sma200 and macdLine > 0 and close > ultimaResistencia
+                    strategy.entry("Compra", strategy.long)
+                    sinalBreakoutDado := true
+                    indiceBarraEntradaCompra := bar_index
+                    breakoutCompraObservado := true
+                    ultimoCandleFechamento := bar_index  
+
+            if (direcaoNegociacao == "Apenas Venda" or direcaoNegociacao == "Ambos") 
+                if close < sma200 and macdLine < 0 and close < ultimoSuporte
+                    strategy.entry("Venda", strategy.short)
+                    sinalBreakoutDado := true
+                    indiceBarraEntradaVenda := bar_index
+                    breakoutVendaObservado := true
+                    ultimoCandleFechamento := bar_index  
+
+if not sinalBreakoutDado
+    if (direcaoNegociacao == "Apenas Compra" or direcaoNegociacao == "Ambos") and close > sma200 and close > ultimaResistencia
+        label.new(bar_index, ultimaResistencia, "🐮", color=color.green, style=label.style_label_up, textcolor=color.white, size=size.small, yloc=yloc.belowbar)
+        strategy.entry("Compra", strategy.long)
+        sinalBreakoutDado := true
+        indiceBarraEntradaCompra := bar_index
+        breakoutCompraObservado := false
+
+    if (direcaoNegociacao == "Apenas Venda" or direcaoNegociacao == "Ambos") and close < sma200 and close < ultimoSuporte
+        label.new(bar_index, ultimoSuporte, "🐻", color=color.red, style=label.style_label_down, textcolor=color.white, size=size.small, yloc=yloc.abovebar)
+        strategy.entry("Venda", strategy.short)
+        sinalBreakoutDado := true
+        indiceBarraEntradaVenda := bar_index
+        breakoutVendaObservado := false
+
+percentualFechamento = 3.0 / 100
+
+if strategy.position_size > 0
+    limiteInferior = sma200 * (1 - percentualFechamento) 
+    if close < limiteInferior
+        strategy.close("Compra", comment="Operação Finalizada")
+
+if strategy.position_size < 0
+    limiteSuperior = sma200 * (1 + percentualFechamento)
+    if close > limiteSuperior
+        strategy.close("Venda", comment="Operação Finalizada")
+
+if strategy.position_size > 0
+    if bar_index > indiceBarraEntradaCompra + atrasoSaida
+        if close > upperKC
+            strategy.close("Compra", comment="Operação Finalizada")
+            indiceBarraEntradaCompra := na 
+
+if strategy.position_size < 0
+    if bar_index > indiceBarraEntradaVenda + atrasoSaida
+        if close < lowerKC
+            strategy.close("Venda", comment="Operação Finalizada")
+            indiceBarraEntradaVenda := na 
+
+porcentagemMovimentoMercado = porcentagemLucro / 10.0
+
+var float precoLucroCompra = na
+var float precoLucroVenda = na
+if (strategy.position_size > 0)
+    precoLucroCompra := strategy.opentrades.entry_price(0) * (1 + porcentagemMovimentoMercado / 100)
+else if (strategy.position_size < 0)
+    precoLucroVenda := strategy.opentrades.entry_price(0) * (1 - porcentagemMovimentoMercado / 100)
+
+if (strategy.position_size > 0 and high >= precoLucroCompra)
+    strategy.close_all(comment="Operação Finalizada")
+    precoLucroCompra := na // Reset do preço de lucro após a execução
+
+if (strategy.position_size < 0 and low <= precoLucroVenda)
+    strategy.close_all(comment="Operação Finalizada")
+    precoLucroVenda := na // Reset do preço de lucro após a execução
+
+if breakoutCompraObservado and strategy.position_size > 0 and close < upperKC
+    strategy.close("Compra", comment="Operação Finalizada")
+    breakoutCompraObservado := false
+    indiceBarraEntradaCompra := na
+
+if breakoutVendaObservado and strategy.position_size < 0 and close > lowerKC
+    strategy.close("Venda", comment="Operação Finalizada")
+    breakoutVendaObservado := false
+    indiceBarraEntradaVenda := na
+
+percentualStopLoss = switch opcoesAlavancagem
+    "5X" => 0.18
+    "10X" => 0.08
+    "15X" => 0.064
+    "20X" => 0.03
+    "25X" => 0.036
+    "30X" => 0.030
+
+var float precoStopLossCompra = na
+var float precoStopLossVenda = na
+if (strategy.position_size > 0)
+    precoStopLossCompra := strategy.opentrades.entry_price(0) * (1 - percentualStopLoss)
+else if (strategy.position_size < 0)
+    precoStopLossVenda := strategy.opentrades.entry_price(0) * (1 + percentualStopLoss)
+
+if (strategy.position_size > 0 and low <= precoStopLossCompra) or (strategy.position_size < 0 and high >= precoStopLossVenda)
+    strategy.close_all(comment="Stop Loss Executado")
+    
